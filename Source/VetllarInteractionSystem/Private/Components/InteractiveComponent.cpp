@@ -56,7 +56,7 @@ bool UVetInteractiveComponent::StartInteraction(UVetInteractionComponent& InInte
 	}
 
 	CurrentInteractor = &InInteractor;
-	InteractiveState.bIsBeingInteractedWith = true;
+	InteractiveState.SetIsBeingInteractedWith(true);
 
 	OnInteractionComplete = InCompleteDelegate;
 
@@ -95,7 +95,7 @@ void UVetInteractiveComponent::SetIsEnabled(bool bInNewEnabled)
 
 bool UVetInteractiveComponent::GetCurrentInteractionAsPercent(float& OutPercent) const
 {
-	if (InteractiveState.bIsBeingInteractedWith == false
+	if (InteractiveState.IsBeingInteractedWith() == false
 		|| InteractiveConfig == nullptr || InteractiveConfig->InteractionTime <= 0.0f)
 	{
 		OutPercent = 0.0f;
@@ -108,11 +108,11 @@ bool UVetInteractiveComponent::GetCurrentInteractionAsPercent(float& OutPercent)
 
 bool UVetInteractiveComponent::GetCurrentInteractionRemainingTime(float& OutRemainingTime, float& OutRequiredTime) const
 {
-	if (InteractiveState.bIsBeingInteractedWith == false
+	if (InteractiveState.IsBeingInteractedWith() == false
 		|| InteractiveConfig == nullptr || InteractiveConfig->InteractionTime <= 0.0f)
 	{
 		OutRequiredTime = 0.0f;
-		OutRequiredTime = 0.0f;
+		OutRemainingTime = 0.0f;
 		return false;
 	}
 
@@ -140,7 +140,7 @@ void UVetInteractiveComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	if (GetOwner()->HasAuthority()
-		&& (!InteractiveState.bIsBeingInteractedWith || !CurrentInteractor.IsValid()))
+		&& (!InteractiveState.IsBeingInteractedWith() || !CurrentInteractor.IsValid()))
 	{
 		CancelInteraction();
 	}
@@ -185,9 +185,10 @@ void UVetInteractiveComponent::OnRep_InteractiveState(const FVetInteractiveState
 		OnInteractabilityStateChanged.Broadcast(InteractiveState.InteractabilityState);
 	}
 
-	if (InteractiveState.bIsBeingInteractedWith != InPreviousState.bIsBeingInteractedWith)
+	if (InteractiveState.IsBeingInteractedWith() != InPreviousState.IsBeingInteractedWith()
+		|| InteractiveState.GetReplicationKey() != InPreviousState.GetReplicationKey())
 	{
-		if (InteractiveState.bIsBeingInteractedWith)
+		if (InteractiveState.IsBeingInteractedWith())
 		{
 			OnInteractionStarted();
 		}
@@ -210,7 +211,6 @@ void UVetInteractiveComponent::OnInteractionStarted()
 	else if (GetOwner()->HasAuthority())
 	{
 		CompleteInteraction_Internal();
-		OnInteractionEndedMulticast(EVetInteractionResult::Success);
 	}
 }
 
@@ -237,15 +237,7 @@ void UVetInteractiveComponent::EndInteraction_Internal()
 {
 	OnInteractionEnded(InteractiveState.InteractionResult);
 	CurrentInteractor = nullptr;
-	InteractiveState.bIsBeingInteractedWith = false;
-}
-
-void UVetInteractiveComponent::OnInteractionEndedMulticast_Implementation(EVetInteractionResult InResult)
-{
-	if (GetOwner()->GetNetMode() == NM_Client)
-	{
-		OnInteractionEnded(InResult);
-	}
+	InteractiveState.SetIsBeingInteractedWith(false);
 }
 
 void  UVetInteractiveComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

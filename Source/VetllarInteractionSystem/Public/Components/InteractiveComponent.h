@@ -23,14 +23,28 @@ struct VETLLARINTERACTIONSYSTEM_API FVetInteractiveState
 {
 	GENERATED_BODY()
 
-	UPROPERTY()
-	bool bIsBeingInteractedWith{false};
+	FORCEINLINE void SetIsBeingInteractedWith(bool bInNewIsBeingInteractedWith)
+	{
+		bIsBeingInteractedWith = bInNewIsBeingInteractedWith;
+		ReplicationKey++;
+	}
+
+	bool IsBeingInteractedWith() const { return bIsBeingInteractedWith; }
+	uint64 GetReplicationKey() const { return ReplicationKey; }
 
 	UPROPERTY()
 	EVetInteractability InteractabilityState{EVetInteractability::Available};
 
 	UPROPERTY()
 	EVetInteractionResult InteractionResult{EVetInteractionResult::Success};
+
+private:
+
+	UPROPERTY()
+	bool bIsBeingInteractedWith{false};
+
+	UPROPERTY()
+	uint64 ReplicationKey{0};
 };
 
 UCLASS( ClassGroup=(Interaction), meta=(BlueprintSpawnableComponent) )
@@ -69,7 +83,7 @@ public:
 	bool GetCurrentInteractionRemainingTime(float& OutRemainingTime, float& OutRequiredTime) const;
 
 	UFUNCTION(BlueprintCallable)
-	bool IsBeingInteractedWith() const { return InteractiveState.bIsBeingInteractedWith; }
+	bool IsBeingInteractedWith() const { return InteractiveState.IsBeingInteractedWith(); }
 
 	UPROPERTY(BlueprintAssignable)
 	FOnInteractabilityStateChanged OnInteractabilityStateChanged;
@@ -105,11 +119,6 @@ private:
 
 	void CompleteInteraction_Internal();
 	void EndInteraction_Internal();
-
-	//Called only after an instant interaction.
-	//Used becasue the interactiveState will not change for  clients in those cases
-	UFUNCTION(NetMulticast, Reliable)
-	void OnInteractionEndedMulticast(EVetInteractionResult InResult);
 
 	UPROPERTY(ReplicatedUsing = OnRep_InteractiveState)
 	FVetInteractiveState InteractiveState;

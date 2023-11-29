@@ -28,6 +28,34 @@ struct VETLLARINTERACTIONSYSTEM_API FVetInteractionComponentState
 {
 	GENERATED_BODY()
 
+	FORCEINLINE void SetIsInteracting(bool bInNewIsInteracting)
+	{
+		bIsInteracting = bInNewIsInteracting;
+		ReplicationKey++;
+	}
+
+	bool IsInteracting() const { return bIsInteracting; }
+
+	FORCEINLINE void SetResult(EVetInteractionResult InResult)
+	{
+		Result = InResult;
+	}
+
+	EVetInteractionResult GetResult() const { return Result; }
+
+	FORCEINLINE void SetFocusedActor(AActor* InActor)
+	{
+		if (InActor != FocusedActor)
+		{
+			FocusedActor = InActor;
+		}
+	}
+
+	AActor* GetFocusedActor() const { return FocusedActor; }
+	uint64 GetReplicationKey() const { return ReplicationKey; }
+
+private:
+
 	UPROPERTY()
 	bool bIsInteracting{false};
 
@@ -36,6 +64,10 @@ struct VETLLARINTERACTIONSYSTEM_API FVetInteractionComponentState
 
 	UPROPERTY()
 	TObjectPtr<AActor> FocusedActor;
+
+	//Used to broadcast changes to the client even if they happened in the same frame on the server
+	UPROPERTY()
+	uint64 ReplicationKey{0};
 };
 
 
@@ -60,7 +92,7 @@ public:
 	void StopInteraction();
 
 	UFUNCTION(BlueprintCallable)
-	AActor* GetFocusedActor() const { return InteractionState.FocusedActor; }
+	AActor* GetFocusedActor() const { return InteractionState.GetFocusedActor(); }
 
 	UPROPERTY(BlueprintAssignable)
 	FOnFocusedActorChanged OnFocusedActorChanged;
@@ -90,10 +122,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, meta = (EditCondition = "TraceType == EVetInteractionTraceType::SphereTrace_FromOwner", EditConditionHides))
 	float InteractionRadius{ 100.f };
 
+	UPROPERTY(EditAnywhere, AdvancedDisplay)
+	bool bShowDebugMessages{false};
+
 private:
 
-	UFUNCTION(Server, Reliable)
-	void Server_StartInteraction();
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_StartInteraction(AActor* InFocusedActor);
 
 	UFUNCTION(Server, Reliable)
 	void Server_StopInteraction();
@@ -111,11 +146,15 @@ private:
 	void TraceForInteractives(bool bInFromTouch = false);
 	void GetTraceHitForLocalPlayerCursor(FHitResult& OutResult, bool bInFromTouch = false) const;
 
+	void ConditionallySetTickEnabled(bool bInEnabled);
+
 	UFUNCTION()
 	void OnRep_InteractionState(const FVetInteractionComponentState& InPreviousState);
 
 	//checks if the actor that owns this component is in a local player world.
 	bool IsLocal() const;
+
+	void PrintDebugMessage(int32 InKey, const FString& InDebugMessage, float InTimeToDisplay = 10.0f);
 
 	UPROPERTY(ReplicatedUsing = OnRep_InteractionState)
 	FVetInteractionComponentState InteractionState;

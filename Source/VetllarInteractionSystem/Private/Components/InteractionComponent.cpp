@@ -28,14 +28,7 @@ void UVetInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	//Do not search for new interactive objects if we are already interacting with something
-	if (InteractionState.bIsInteracting)
-	{
-		return;
-	}
-
-	//Don't trace on the server if its not a local player and we are using cursor traces.
-	if (TraceType == EVetInteractionTraceType::LineTrace_FromCursor
-		&& !IsLocal())
+	if (InteractionState.IsInteracting())
 	{
 		return;
 	}
@@ -46,23 +39,26 @@ void UVetInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 void UVetInteractionComponent::StartInteraction()
 {
 	//We cannot start a new interaction if we are already interacting with something
-	if (InteractionState.bIsInteracting)
+	if (InteractionState.IsInteracting())
 	{
 		return;
 	}
 	
-	if (InteractionState.FocusedActor == nullptr || !IVetInteractiveInterface::Execute_CanBeInteractedWith(InteractionState.FocusedActor, this))
+	if (InteractionState.GetFocusedActor() == nullptr || !IVetInteractiveInterface::Execute_CanBeInteractedWith(InteractionState.GetFocusedActor(), this))
 	{
 		return;
 	}
 
 	if (!GetOwner()->HasAuthority())
 	{
-		Server_StartInteraction();
+		//Pass in the focused actor in case we predicted it during a trace from cursor (the server can't know the focused actor if tracing from cursor).
+
+		AActor* ServerFocusedActor = (TraceType == EVetInteractionTraceType::LineTrace_FromCursor) ? InteractionState.GetFocusedActor() : nullptr;
+		Server_StartInteraction(ServerFocusedActor);	
 		return;
 	}
 	
-	if (UVetInteractiveComponent* InteractiveComponent =  IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.FocusedActor))
+	if (UVetInteractiveComponent* InteractiveComponent =  IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor()))
 	{
 		FOnInteractionComplete InteractionCompleteDelegate;
 		InteractionCompleteDelegate.BindUObject(this, &UVetInteractionComponent::OnInteractionCompleted);
@@ -73,8 +69,8 @@ void UVetInteractionComponent::StartInteraction()
 			UVetInteractiveConfig* InteractiveConfig = InteractiveComponent->GetInteractiveConfig();
 			if (InteractiveConfig && InteractiveConfig->InteractionTime > 0.0f)
 			{
-				InteractionState.bIsInteracting = true;
-				PrimaryComponentTick.SetTickFunctionEnable(false);
+				InteractionState.SetIsInteracting(true);
+				ConditionallySetTickEnabled(/*bInEnabled =*/ false);
 			}
 		}
 	}
@@ -83,7 +79,7 @@ void UVetInteractionComponent::StartInteraction()
 void UVetInteractionComponent::StartTouchInteraction()
 {
 	//Don't even try if an interaction is already taking place
-	if (InteractionState.bIsInteracting)
+	if (InteractionState.IsInteracting())
 	{
 		return;
 	}
@@ -101,18 +97,18 @@ void UVetInteractionComponent::StartTouchInteraction()
 void UVetInteractionComponent::StopInteraction()
 {
 	//Can't stop an interaction that is not taking place
-	if (!InteractionState.bIsInteracting)
+	if (!InteractionState.IsInteracting())
 	{
 		return;
 	}
 
-	auto* const FocusedInteractive = Cast<IVetInteractiveInterface>(InteractionState.FocusedActor);
+	auto* const FocusedInteractive = Cast<IVetInteractiveInterface>(InteractionState.GetFocusedActor());
 	if (FocusedInteractive == nullptr)
 	{
 		return;
 	}
 
-	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.FocusedActor);
+	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
 	if (InteractiveComponent == nullptr)
 	{
 		return;
@@ -141,8 +137,8 @@ void UVetInteractionComponent::StopInteraction()
 		return;
 	}
 
-	InteractionState.bIsInteracting = false;
-	InteractionState.Result = EVetInteractionResult::Cancelled;
+	InteractionState.SetIsInteracting(false);
+	InteractionState.SetResult(EVetInteractionResult::Cancelled);
 
 	InteractiveComponent->CancelInteraction();
 
@@ -153,14 +149,25 @@ void UVetInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();	
 	
-	if (GetOwner()->HasAuthority())
-	{
-		PrimaryComponentTick.SetTickFunctionEnable(true);
-	}
+	ConditionallySetTickEnabled(/*bInEnabled =*/ true);
 }
 
-void UVetInteractionComponent::Server_StartInteraction_Implementation()
+bool UVetInteractionComponent::Server_StartInteraction_Validate(AActor* InFocusedActor)
 {
+	if (TraceType == EVetInteractionTraceType::LineTrace_FromCursor)
+	{
+		return IsValid(InFocusedActor);
+	}
+	return true;
+}
+
+void UVetInteractionComponent::Server_StartInteraction_Implementation(AActor* InFocusedActor)
+{
+	if (IsValid(InFocusedActor))
+	{
+		SetFocusedActor(InFocusedActor);
+	}
+
 	StartInteraction();
 }
 
@@ -173,15 +180,15 @@ void UVetInteractionComponent::SetFocusedActor(AActor* InNewFocusedActor)
 {
 	//If we are focusing the same actor as before just exit the function
 	//either both null or valid.
-	if (InteractionState.FocusedActor == InNewFocusedActor)
+	if (InteractionState.GetFocusedActor() == InNewFocusedActor)
 	{
 		return;
 	}
 
-	SwitchFocusedActor(InNewFocusedActor, InteractionState.FocusedActor);
+	SwitchFocusedActor(InNewFocusedActor, InteractionState.GetFocusedActor());
 
 	//We might be removing focus from all actors.
-	InteractionState.FocusedActor = InNewFocusedActor;
+	InteractionState.SetFocusedActor(InNewFocusedActor);
 }
 
 void UVetInteractionComponent::SwitchFocusedActor(AActor* InNewFocusedActor, AActor* InPreviousFocusedActor)
@@ -238,35 +245,34 @@ AActor* UVetInteractionComponent::GetClosestActorFromArray(const TArray<AActor*>
 
 void UVetInteractionComponent::OnInteractionCompleted(UVetInteractiveComponent& InInteractive)
 {
-	if (InteractionState.FocusedActor == nullptr)
+	if (InteractionState.GetFocusedActor() == nullptr)
 	{
 		//TODO: log this, this should never happen
 		return;
 	}
 
-	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.FocusedActor);
+	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
 	if (&InInteractive != InteractiveComponent)
 	{
 		//TODO: log this.
 		return;
 	}
 
-	InteractionState.bIsInteracting = false;
-	InteractionState.Result = EVetInteractionResult::Success;
+	InteractionState.SetIsInteracting(false);
+	InteractionState.SetResult(EVetInteractionResult::Success);
 
 	OnInteractionEnded_Internal();
 }
 
 void UVetInteractionComponent::OnInteractionEnded_Internal()
 {
-	UVetInteractiveComponent* CurrentInteractive = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.FocusedActor);
-	OnInteractionEnded.Broadcast(CurrentInteractive, InteractionState.Result);
+	UVetInteractiveComponent* CurrentInteractive = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
+	OnInteractionEnded.Broadcast(CurrentInteractive, InteractionState.GetResult());
 
 	//Re-enable ticking on the server
-	if (GetOwner()->HasAuthority()
-		&& !PrimaryComponentTick.IsTickFunctionEnabled())
+	if (!PrimaryComponentTick.IsTickFunctionEnabled())
 	{
-		PrimaryComponentTick.SetTickFunctionEnable(true);
+		ConditionallySetTickEnabled(/*bInEnabled =*/ true);
 	}
 }
 
@@ -277,7 +283,9 @@ void UVetInteractionComponent::TraceForInteractives(bool bInFromTouch /*= false*
 
 	if (TraceType == EVetInteractionTraceType::LineTrace_FromCursor)
 	{
-		GetTraceHitForLocalPlayerCursor(HitResults.Emplace_GetRef());
+		FHitResult& HitResult = HitResults.Emplace_GetRef();
+		GetTraceHitForLocalPlayerCursor(HitResult);
+		PrintDebugMessage(0, FString::Printf(TEXT("Hit Actor: %s"), HitResult.GetActor()));
 	}
 	else
 	{
@@ -328,25 +336,37 @@ void UVetInteractionComponent::GetTraceHitForLocalPlayerCursor(FHitResult& OutRe
 	}
 }
 
+void UVetInteractionComponent::ConditionallySetTickEnabled(bool bInEnabled)
+{
+	if ((TraceType == EVetInteractionTraceType::LineTrace_FromCursor && IsLocal())
+		|| TraceType != EVetInteractionTraceType::LineTrace_FromCursor && GetOwner()->HasAuthority())
+	{
+		PrimaryComponentTick.SetTickFunctionEnable(bInEnabled);
+	}
+}
+
 void UVetInteractionComponent::OnRep_InteractionState(const FVetInteractionComponentState& InPreviousState)
 {
-	if (InPreviousState.bIsInteracting != InteractionState.bIsInteracting)
+	if (InPreviousState.IsInteracting() != InteractionState.IsInteracting()
+		|| InPreviousState.GetReplicationKey() != InteractionState.GetReplicationKey())
 	{
-		UVetInteractiveComponent* CurrentInteractive = InteractionState.FocusedActor == nullptr ? nullptr : IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.FocusedActor);
+		UVetInteractiveComponent* CurrentInteractive = InteractionState.GetFocusedActor() == nullptr ? nullptr : IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
 
-		if (InteractionState.bIsInteracting)
+		if (InteractionState.IsInteracting())
 		{
 			OnInteractionStarted.Broadcast(CurrentInteractive);
+			ConditionallySetTickEnabled(/*bInEnabled =*/ false);
 		}
 		else
 		{
-			OnInteractionEnded.Broadcast(CurrentInteractive, InteractionState.Result);
+			OnInteractionEnded.Broadcast(CurrentInteractive, InteractionState.GetResult());
+			ConditionallySetTickEnabled(/*bInEnabled =*/ true);
 		}
 	}
 
-	if (InteractionState.FocusedActor != InPreviousState.FocusedActor)
+	if (InteractionState.GetFocusedActor() != InPreviousState.GetFocusedActor())
 	{
-		SwitchFocusedActor(InteractionState.FocusedActor, InPreviousState.FocusedActor);
+		SwitchFocusedActor(InteractionState.GetFocusedActor(), InPreviousState.GetFocusedActor());
 	}
 }
 
@@ -355,6 +375,16 @@ bool UVetInteractionComponent::IsLocal() const
 
 	APlayerController* const PC = GetWorld()->GetFirstPlayerController();
 	return IsValid(PC) && PC->IsLocalController();
+}
+
+void UVetInteractionComponent::PrintDebugMessage(int32 InKey, const FString& InDebugMessage, float InTimeToDisplay /*= 10.0f*/)
+{
+#if WITH_EDITOR
+	if (bShowDebugMessages)
+	{
+		GEngine->AddOnScreenDebugMessage(InKey, InTimeToDisplay, FColor::Red, InDebugMessage);
+	}
+#endif
 }
 
 void UVetInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
