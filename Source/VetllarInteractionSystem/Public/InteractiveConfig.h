@@ -21,6 +21,7 @@ class VETLLARINTERACTIONSYSTEM_API UVetInteractivePrerequisiteScript : public UO
 	GENERATED_BODY()
 
 public:
+
 	virtual bool CanBeFocusedOn(const UVetInteractionComponent& InInteractor) const;
 	virtual bool CanBeInteractedWith(const UVetInteractionComponent& InInteractor) const;
 
@@ -36,6 +37,7 @@ protected:
 
 	UFUNCTION(BlueprintCallable)
 	UVetInteractiveComponent* GetInteractiveComponent() const;
+
 };
 
 /**

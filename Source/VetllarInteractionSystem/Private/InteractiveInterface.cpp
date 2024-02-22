@@ -2,91 +2,167 @@
 
 
 #include "InteractiveInterface.h"
+#include "Components/InteractionComponent.h"
 #include "Components/InteractiveComponent.h"
 
-EVetInteractability IVetInteractiveInterface::GetInteractabilityState_Implementation() const
-{
-	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Implementation())
-	{
-		return InteractiveComponent->GetInteractabilityState();
-	}
-	return EVetInteractability::Available;
-}
+DEFINE_LOG_CATEGORY(LogVetInteractiveInterface);
 
-bool IVetInteractiveInterface::CanBeInteractedWith_Implementation(UVetInteractionComponent* InInteractor) const
+EVetInteractability IVetInteractiveInterface::GetInteractabilityState_Internal(AActor* InInteractive)
 {
-	if (InInteractor == nullptr)
+	if (!IsValid(InInteractive))
 	{
-		return false;
+		return EVetInteractability::Unavailable;
 	}
 
-	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Implementation())
+	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Internal(InInteractive))
 	{
-		return InteractiveComponent->CanBeInteractedWith(*InInteractor);
-	}
-	return GetInteractabilityState_Implementation() == EVetInteractability::Available;
-}
-
-bool IVetInteractiveInterface::CanBeFocusedOn_Implementation(UVetInteractionComponent* InInteractor) const
-{
-	if (InInteractor == nullptr)
-	{
-		return false;
-	}
-
-	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Implementation())
-	{
-		return InteractiveComponent->CanBeFocusedOn(*InInteractor);
-	}
-	return GetInteractabilityState_Implementation() != EVetInteractability::Unavailable;
-}
-
-UVetInteractiveComponent* IVetInteractiveInterface::GetInteractiveComponent_Implementation() const
-{
-	ensureMsgf(false, TEXT("Get interactive component not implemented in this actor!"));
-	return nullptr;
-}
-
-//HELPER LIBRARY ---------------------------------------------------------------------------------------------------------- //
-
-EVetInteractability UVetInteractiveHelperLibrary::Native_GetInteractabilityState(TScriptInterface<IVetInteractiveInterface> InteractiveObject)
-{
-	if (InteractiveObject.GetObject())
-	{
-		if (UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractiveObject.GetObject()))
+		//If internally we are unavailable, we don't even ask overrides about it.
+		EVetInteractability IntaractabilityState = InteractiveComponent->GetInteractabilityState();
+		if (IntaractabilityState < EVetInteractability::Unavailable)
 		{
-			return InteractiveComponent->GetInteractabilityState();
+			//Will only be valid if the interface is implemented in C++.
+			if (IVetInteractiveInterface* NativeInterface = Cast<IVetInteractiveInterface>(InInteractive))
+			{
+				const EVetInteractability NativeInteractabilty = NativeInterface->GetInteractabilityState();
+
+				//Pick the least interactible of the states
+				IntaractabilityState = NativeInteractabilty > IntaractabilityState ? NativeInteractabilty : IntaractabilityState;
+			}
+
+			bool bBPFunctionImplemented{ false };
+			const EVetInteractability BP_Interactability = IVetInteractiveInterface::Execute_K2_GetDesiredInteractabilityState(InInteractive, bBPFunctionImplemented);
+
+			//Pick the least interactible of the states if the blueprint function is implemented
+			IntaractabilityState = (bBPFunctionImplemented && BP_Interactability > IntaractabilityState) ? BP_Interactability : IntaractabilityState;
+		}
+		return IntaractabilityState;
+	}
+	return EVetInteractability::Unavailable;
+}
+
+bool IVetInteractiveInterface::CanBeInteractedWith_Internal(AActor* InInteractive, UVetInteractionComponent* InInteractor)
+{
+	if (!IsValid(InInteractive) || !IsValid(InInteractor))
+	{
+		return false;
+	}
+
+	const EVetInteractability InteractabilityState = GetInteractabilityState_Internal(InInteractive);
+	if (InteractabilityState != EVetInteractability::Available)
+	{
+		return false;
+	}
+
+	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Internal(InInteractive))
+	{
+		//Internal check
+		if (!InteractiveComponent->CanBeInteractedWith(*InInteractor))
+		{
+			return false;
+		}
+
+		//BP check
+		bool bBP_CallImplemented{false};
+		const bool bBP_CanBeInteractedWith = IVetInteractiveInterface::Execute_K2_CanBeInteractedWith(InInteractive, InInteractor, bBP_CallImplemented);
+
+		if (bBP_CallImplemented && !bBP_CanBeInteractedWith)
+		{
+			return false;
+		}
+
+		//Native check
+		if (IVetInteractiveInterface* const NativeInterface = Cast<IVetInteractiveInterface>(InInteractive))
+		{
+			return NativeInterface->CanBeInteractedWith(*InInteractor);
+		}
+	} 
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+bool IVetInteractiveInterface::CanBeFocusedOn_Internal(AActor* InInteractive, UVetInteractionComponent* InInteractor)
+{
+	if (!IsValid(InInteractive) || !IsValid(InInteractor))
+	{
+		return false;
+	}
+
+	const EVetInteractability InteractabilityState = GetInteractabilityState_Internal(InInteractive);
+	if (InteractabilityState == EVetInteractability::Unavailable)
+	{
+		return false;
+	}
+
+	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Internal(InInteractive))
+	{
+		//Internal check
+		if (!InteractiveComponent->CanBeFocusedOn(*InInteractor))
+		{
+			return false;
+		}
+
+		//BP check
+		bool bBP_CallImplemented{ false };
+		const bool bBP_CanBeFocusedOn = IVetInteractiveInterface::Execute_K2_CanBeFocusedOn(InInteractive, InInteractor, bBP_CallImplemented);
+
+		if (bBP_CallImplemented && !bBP_CanBeFocusedOn)
+		{
+			return false;
+		}
+
+		//Native check
+		if (IVetInteractiveInterface* const NativeInterface = Cast<IVetInteractiveInterface>(InInteractive))
+		{
+			return NativeInterface->CanBeFocusedOn(*InInteractor);
 		}
 	}
-	return EVetInteractability::Available;
-}
-
-bool UVetInteractiveHelperLibrary::Native_CanbeInteractedWith(TScriptInterface<IVetInteractiveInterface> InteractiveObject, UVetInteractionComponent* InInteractor)
-{
-	if (InInteractor == nullptr
-		|| InteractiveObject.GetObject() == nullptr)
+	else
 	{
 		return false;
 	}
-
-	if (UVetInteractiveComponent* const InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractiveObject.GetObject()))
-	{
-		return InteractiveComponent->CanBeInteractedWith(*InInteractor);
-	}
-	return Native_GetInteractabilityState(InteractiveObject) == EVetInteractability::Available;
+	return true;
 }
 
-bool UVetInteractiveHelperLibrary::Native_CanBeFocusedOn(TScriptInterface<IVetInteractiveInterface> InteractiveObject, UVetInteractionComponent* InInteractor)
+UVetInteractiveComponent* IVetInteractiveInterface::GetInteractiveComponent_Internal(AActor* InInteractive)
 {
-	if (InInteractor == nullptr
-		|| InteractiveObject.GetObject() == nullptr)
+	if (!IsValid(InInteractive))
 	{
-		return false;
+		return nullptr;
 	}
 
-	if (UVetInteractiveComponent* const InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractiveObject.GetObject()))
+	//Try to grab the interactive component from fastest to slowest calls in case the end user forgot to implement the functions.
+	UVetInteractiveComponent* InteractiveComponent{nullptr};
+
+	//Check if blueprint implemented the call
+	InteractiveComponent = IVetInteractiveInterface::Execute_K2_GetInteractiveComponent(InInteractive);
+	if (IsValid(InteractiveComponent))
 	{
-		return InteractiveComponent->CanBeFocusedOn(*InInteractor);
+		return InteractiveComponent;
 	}
-	return Native_GetInteractabilityState(InteractiveObject) != EVetInteractability::Unavailable;
+
+	//check if it is natively implemented
+	if (IVetInteractiveInterface* const NativeInterface = Cast<IVetInteractiveInterface>(InInteractive))
+	{
+		InteractiveComponent = NativeInterface->GetInteractiveComponent();
+	}
+
+	if (!IsValid(InteractiveComponent))
+	{
+#if WITH_EDITOR
+		UE_LOG(LogVetInteractiveInterface, Warning, TEXT("Actor %s does not implement either blueprint nor native GetInteractiveComponent methods. Attempting slow get..."), *InInteractive->GetName());
+#endif //WITH_EDITOR
+		
+		InteractiveComponent = InInteractive->GetComponentByClass<UVetInteractiveComponent>();
+	}
+
+#if WITH_EDITOR
+	if (!IsValid(InteractiveComponent))
+	{
+		UE_LOG(LogVetInteractiveInterface, Error, TEXT("Actor %s does not have an interactive component!"), *InInteractive->GetName());
+	}
+#endif //WITH_EDITOR
+	return InteractiveComponent;
 }

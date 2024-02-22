@@ -44,7 +44,7 @@ void UVetInteractionComponent::StartInteraction()
 		return;
 	}
 	
-	if (InteractionState.GetFocusedActor() == nullptr || !IVetInteractiveInterface::Execute_CanBeInteractedWith(InteractionState.GetFocusedActor(), this))
+	if (InteractionState.GetFocusedActor() == nullptr || !IVetInteractiveInterface::CanBeInteractedWith_Internal(InteractionState.GetFocusedActor(), this))
 	{
 		return;
 	}
@@ -58,7 +58,7 @@ void UVetInteractionComponent::StartInteraction()
 		return;
 	}
 	
-	if (UVetInteractiveComponent* InteractiveComponent =  IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor()))
+	if (UVetInteractiveComponent* InteractiveComponent =  IVetInteractiveInterface::GetInteractiveComponent_Internal(InteractionState.GetFocusedActor()))
 	{
 		FOnInteractionComplete InteractionCompleteDelegate;
 		InteractionCompleteDelegate.BindUObject(this, &UVetInteractionComponent::OnInteractionCompleted);
@@ -108,7 +108,7 @@ void UVetInteractionComponent::StopInteraction()
 		return;
 	}
 
-	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
+	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::GetInteractiveComponent_Internal(InteractionState.GetFocusedActor());
 	if (InteractiveComponent == nullptr)
 	{
 		return;
@@ -143,6 +143,38 @@ void UVetInteractionComponent::StopInteraction()
 	InteractiveComponent->CancelInteraction();
 
 	OnInteractionEnded_Internal();
+}
+
+void UVetInteractionComponent::SetDefaultTraceChannel(ECollisionChannel InTraceChannel)
+{
+	if (CheckConstructorContext(TEXT("SetDefaultTraceChannel")))
+	{
+		TraceChannel = InTraceChannel;
+	}
+}
+
+void UVetInteractionComponent::SetDefaultTraceType(EVetInteractionTraceType InTraceType)
+{
+	if (CheckConstructorContext(TEXT("SetDefaultTraceType")))
+	{
+		TraceType = InTraceType;
+	}
+}
+
+void UVetInteractionComponent::SetDefaultInteractionDistance(float InInteractionDistance)
+{
+	if (CheckConstructorContext(TEXT("SetDefaultInteractionDistance")))
+	{
+		InteractionDistance = InInteractionDistance;
+	}
+}
+
+void UVetInteractionComponent::SetDefaultInteractionRadius(float InInteractionRadius)
+{
+	if (CheckConstructorContext(TEXT("SetDefaultInteractionRadius")))
+	{
+		InteractionRadius = InInteractionRadius;
+	}
 }
 
 void UVetInteractionComponent::BeginPlay()
@@ -196,7 +228,7 @@ void UVetInteractionComponent::SwitchFocusedActor(AActor* InNewFocusedActor, AAc
 	//Remove focus from previous actor
 	if (InPreviousFocusedActor != nullptr)
 	{
-		if (auto* const InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InPreviousFocusedActor))
+		if (auto* const InteractiveComponent = IVetInteractiveInterface::GetInteractiveComponent_Internal(InPreviousFocusedActor))
 		{
 			InteractiveComponent->EndFocusedOn();
 		}
@@ -205,7 +237,7 @@ void UVetInteractionComponent::SwitchFocusedActor(AActor* InNewFocusedActor, AAc
 	//Focus on the new actor
 	if (InNewFocusedActor != nullptr)
 	{
-		if (auto* const InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InNewFocusedActor))
+		if (auto* const InteractiveComponent = IVetInteractiveInterface::GetInteractiveComponent_Internal(InNewFocusedActor))
 		{
 			InteractiveComponent->BeginFocusedOn();
 		}
@@ -251,7 +283,7 @@ void UVetInteractionComponent::OnInteractionCompleted(UVetInteractiveComponent& 
 		return;
 	}
 
-	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
+	UVetInteractiveComponent* InteractiveComponent = IVetInteractiveInterface::GetInteractiveComponent_Internal(InteractionState.GetFocusedActor());
 	if (&InInteractive != InteractiveComponent)
 	{
 		//TODO: log this.
@@ -266,7 +298,7 @@ void UVetInteractionComponent::OnInteractionCompleted(UVetInteractiveComponent& 
 
 void UVetInteractionComponent::OnInteractionEnded_Internal()
 {
-	UVetInteractiveComponent* CurrentInteractive = IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
+	UVetInteractiveComponent* CurrentInteractive = IVetInteractiveInterface::GetInteractiveComponent_Internal(InteractionState.GetFocusedActor());
 	OnInteractionEnded.Broadcast(CurrentInteractive, InteractionState.GetResult());
 
 	//Re-enable ticking on the server
@@ -285,7 +317,12 @@ void UVetInteractionComponent::TraceForInteractives(bool bInFromTouch /*= false*
 	{
 		FHitResult& HitResult = HitResults.Emplace_GetRef();
 		GetTraceHitForLocalPlayerCursor(HitResult);
-		PrintDebugMessage(0, FString::Printf(TEXT("Hit Actor: %s"), HitResult.GetActor()));
+#if WITH_EDITOR
+		if (IsValid(HitResult.GetActor()))
+		{
+			PrintDebugMessage(0, FString::Printf(TEXT("Hit Actor: %s"), *HitResult.GetActor()->GetName()));
+		}
+#endif //WITH_EDITOR
 	}
 	else
 	{
@@ -301,9 +338,10 @@ void UVetInteractionComponent::TraceForInteractives(bool bInFromTouch /*= false*
 		for (const FHitResult& HitResult : HitResults)
 		{
 			AActor* const HitActor = HitResult.GetActor();
-			if (HitActor != nullptr
-				&& HitActor->GetClass()->ImplementsInterface(UVetInteractiveInterface::StaticClass())
-				&& IVetInteractiveInterface::Execute_CanBeFocusedOn(HitActor, this))	//Ignore interactives that cannot be focused on
+			const bool bDoesImplementInterface = UKismetSystemLibrary::DoesImplementInterface(HitActor, UVetInteractiveInterface::StaticClass());
+			if (IsValid(HitActor)
+				&& bDoesImplementInterface
+				&& IVetInteractiveInterface::CanBeFocusedOn_Internal(HitActor, this))	//Ignore interactives that cannot be focused on
 			{
 				FoundInteractives.Emplace(HitActor);
 			}
@@ -350,7 +388,7 @@ void UVetInteractionComponent::OnRep_InteractionState(const FVetInteractionCompo
 	if (InPreviousState.IsInteracting() != InteractionState.IsInteracting()
 		|| InPreviousState.GetReplicationKey() != InteractionState.GetReplicationKey())
 	{
-		UVetInteractiveComponent* CurrentInteractive = InteractionState.GetFocusedActor() == nullptr ? nullptr : IVetInteractiveInterface::Execute_GetInteractiveComponent(InteractionState.GetFocusedActor());
+		UVetInteractiveComponent* CurrentInteractive = InteractionState.GetFocusedActor() == nullptr ? nullptr : IVetInteractiveInterface::GetInteractiveComponent_Internal(InteractionState.GetFocusedActor());
 
 		if (InteractionState.IsInteracting())
 		{
@@ -385,6 +423,12 @@ void UVetInteractionComponent::PrintDebugMessage(int32 InKey, const FString& InD
 		GEngine->AddOnScreenDebugMessage(InKey, InTimeToDisplay, FColor::Red, InDebugMessage);
 	}
 #endif
+}
+
+bool UVetInteractionComponent::CheckConstructorContext(const TCHAR* InContext) const
+{
+	check(InContext != nullptr && "Check constructor context called without a context!");
+	return ensureAlwaysMsgf(FUObjectThreadContext::Get().IsInConstructor, TEXT("Default Initializer function %s can only be called from within the actor constructor!"), *InContext);
 }
 
 void UVetInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

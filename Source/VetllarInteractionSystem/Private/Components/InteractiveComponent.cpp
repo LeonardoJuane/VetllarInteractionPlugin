@@ -25,7 +25,7 @@ bool UVetInteractiveComponent::CanBeFocusedOn(UVetInteractionComponent& InIntera
 	bool bResult = InteractiveState.InteractabilityState != EVetInteractability::Unavailable;
 	if (InteractionPrerequisiteScript != nullptr)
 	{
-		bResult &= InteractionPrerequisiteScript->CanBeFocusedOn(InInteractor);
+		bResult = bResult && InteractionPrerequisiteScript->CanBeFocusedOn(InInteractor);
 	}
 	return bResult;
 }
@@ -41,7 +41,7 @@ bool UVetInteractiveComponent::CanBeInteractedWith(UVetInteractionComponent& InI
 	bool bResult = InteractiveState.InteractabilityState == EVetInteractability::Available;
 	if (InteractionPrerequisiteScript != nullptr)
 	{
-		bResult &= InteractionPrerequisiteScript->CanBeInteractedWith(InInteractor);
+		bResult = bResult && InteractionPrerequisiteScript->CanBeInteractedWith(InInteractor);
 	}
 	return bResult;
 }
@@ -72,14 +72,14 @@ void UVetInteractiveComponent::CancelInteraction()
 
 void UVetInteractiveComponent::BeginFocusedOn()
 {
-	//TODO: CALL ON CLIENT??
-	//TODO: HIGHLIGHT MESHES OR WHATEVER
+	OnBeginFocusedOn();
+	K2_OnBeginFocusedOn();
 }
 
 void UVetInteractiveComponent::EndFocusedOn()
 {
-	//TOD: CALL ON CLIENT??
-	//TODO: REMOVE MESH HIGHLIGHT
+	OnEndFocusedOn();
+	K2_OnEndFocusedOn();
 }
 
 void UVetInteractiveComponent::SetIsEnabled(bool bInNewEnabled)

@@ -77,6 +77,7 @@ class VETLLARINTERACTIONSYSTEM_API UVetInteractionComponent : public UActorCompo
 	GENERATED_BODY()
 
 public:	
+
 	UVetInteractionComponent();
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -94,6 +95,13 @@ public:
 	UFUNCTION(BlueprintCallable)
 	AActor* GetFocusedActor() const { return InteractionState.GetFocusedActor(); }
 
+	//Default initializers
+
+	void SetDefaultTraceChannel(ECollisionChannel InTraceChannel);
+	void SetDefaultTraceType(EVetInteractionTraceType InTraceType);
+	void SetDefaultInteractionDistance(float InInteractionDistance);
+	void SetDefaultInteractionRadius(float InInteractionRadius);
+
 	UPROPERTY(BlueprintAssignable)
 	FOnFocusedActorChanged OnFocusedActorChanged;
 
@@ -104,6 +112,7 @@ public:
 	FOnInteractionEnded OnInteractionEnded;
 
 protected:
+
 	virtual void BeginPlay() override;
 
 	//Trace channel to use for interactives
@@ -155,6 +164,8 @@ private:
 	bool IsLocal() const;
 
 	void PrintDebugMessage(int32 InKey, const FString& InDebugMessage, float InTimeToDisplay = 10.0f);
+
+	bool CheckConstructorContext(const TCHAR* InContext) const;
 
 	UPROPERTY(ReplicatedUsing = OnRep_InteractionState)
 	FVetInteractionComponentState InteractionState;

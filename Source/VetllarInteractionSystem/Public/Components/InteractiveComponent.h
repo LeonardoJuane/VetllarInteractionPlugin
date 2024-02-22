@@ -96,8 +96,18 @@ public:
 
 protected:
 
-	virtual void BeginPlay() override final;
-	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override final;
+	virtual void BeginPlay() override;
+	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
+
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "On Begin Focused On"))
+	void K2_OnBeginFocusedOn();
+
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "On End Focused On"))
+	void K2_OnEndFocusedOn();
+
+
+	virtual void OnBeginFocusedOn() {}
+	virtual void OnEndFocusedOn() {}
 
 	//Set to true if you want this interactive to be available on start.
 	UPROPERTY(EditAnywhere)
