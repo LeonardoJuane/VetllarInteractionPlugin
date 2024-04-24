@@ -12,9 +12,11 @@
 
 class UVetInteractionComponent;
 
+DECLARE_LOG_CATEGORY_EXTERN(LogVetInteractive, Log, All);
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractabilityStateChanged, EVetInteractability, NewInteractabilityState);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractionStarted_Multicast, UVetInteractionComponent*, InInteractor);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractionEnded_Multicast, UVetInteractionComponent*, InInteractor, EVetInteractionResult, InteractionResult);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractionStarted_Multicast, UVetInteractionComponent*, InInteractor, UPrimitiveComponent*, FocusedOnComponent);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnInteractionEnded_Multicast, UVetInteractionComponent*, InInteractor, EVetInteractionResult, InteractionResult, UPrimitiveComponent*, FocusedOnComponent);
 
 DECLARE_DELEGATE_OneParam(FOnInteractionComplete, UVetInteractiveComponent& /*this*/);
 
@@ -23,14 +25,24 @@ struct VETLLARINTERACTIONSYSTEM_API FVetInteractiveState
 {
 	GENERATED_BODY()
 
-	FORCEINLINE void SetIsBeingInteractedWith(bool bInNewIsBeingInteractedWith)
+	FORCEINLINE void SetIsBeingInteractedWith(bool bInNewIsBeingInteractedWith, UPrimitiveComponent* InFocusedOnComponent = nullptr)
 	{
 		bIsBeingInteractedWith = bInNewIsBeingInteractedWith;
+		
+		//We want to keep this valid since during an instant interaction this will not replicate
+		//correctly if nulled after broadcasting on the server.
+		if (IsValid(InFocusedOnComponent)
+			&& InFocusedOnComponent != FocuedOnComponent)
+		{
+			FocuedOnComponent = InFocusedOnComponent;
+		}
+
 		ReplicationKey++;
 	}
 
 	bool IsBeingInteractedWith() const { return bIsBeingInteractedWith; }
 	uint64 GetReplicationKey() const { return ReplicationKey; }
+	UPrimitiveComponent* GetFocusedOnComponent() const { return FocuedOnComponent.Get(); }
 
 	UPROPERTY()
 	EVetInteractability InteractabilityState{EVetInteractability::Available};
@@ -42,6 +54,10 @@ private:
 
 	UPROPERTY()
 	bool bIsBeingInteractedWith{false};
+
+	//The component that was being focused on when the interaction started
+	UPROPERTY()
+	TWeakObjectPtr<UPrimitiveComponent> FocuedOnComponent;
 
 	UPROPERTY()
 	uint64 ReplicationKey{0};
@@ -57,11 +73,11 @@ public:
 
 	bool CanBeFocusedOn(UVetInteractionComponent& InInteractor) const;
 	bool CanBeInteractedWith(UVetInteractionComponent& InInteractor) const;
-	bool StartInteraction(UVetInteractionComponent& InInteractor, const FOnInteractionComplete& InCompleteDelegate);
+	bool StartInteraction(UVetInteractionComponent& InInteractor, const FOnInteractionComplete& InCompleteDelegate, UPrimitiveComponent* InFocuedOnComponent);
 	void CancelInteraction();
 		
-	void BeginFocusedOn();
-	void EndFocusedOn();
+	void BeginFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent);
+	void EndFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent);
 
 	EVetInteractability GetInteractabilityState() const { return InteractiveState.InteractabilityState; }
 	UVetInteractionComponent* GetCurrentInteractor() { return CurrentInteractor.Get(); }
@@ -100,14 +116,13 @@ protected:
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
 
 	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "On Begin Focused On"))
-	void K2_OnBeginFocusedOn();
+	void K2_OnBeginFocusedOn(UVetInteractionComponent* InInteractor, UPrimitiveComponent* InFocusedOnComponent);
 
 	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "On End Focused On"))
-	void K2_OnEndFocusedOn();
+	void K2_OnEndFocusedOn(UVetInteractionComponent* InInteractor, UPrimitiveComponent* InFocusedOnComponent);
 
-
-	virtual void OnBeginFocusedOn() {}
-	virtual void OnEndFocusedOn() {}
+	virtual void OnBeginFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent) {}
+	virtual void OnEndFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent) {}
 
 	//Set to true if you want this interactive to be available on start.
 	UPROPERTY(EditAnywhere)

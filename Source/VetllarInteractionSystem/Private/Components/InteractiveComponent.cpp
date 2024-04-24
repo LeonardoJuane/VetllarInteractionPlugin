@@ -1,11 +1,15 @@
 // (c) 2023 Leonardo F. Juane - To be used under Boost Software License 1.0
 
-//Interaction
 #include "Components/InteractiveComponent.h"
-#include "Components/InteractionComponent.h"
 
 //Engine
 #include "Net/UnrealNetwork.h"
+
+//Interaction
+#include "Components/InteractionComponent.h"
+
+
+DEFINE_LOG_CATEGORY(LogVetInteractive);
 
 UVetInteractiveComponent::UVetInteractiveComponent()
 {
@@ -46,7 +50,7 @@ bool UVetInteractiveComponent::CanBeInteractedWith(UVetInteractionComponent& InI
 	return bResult;
 }
 
-bool UVetInteractiveComponent::StartInteraction(UVetInteractionComponent& InInteractor, const FOnInteractionComplete& InCompleteDelegate)
+bool UVetInteractiveComponent::StartInteraction(UVetInteractionComponent& InInteractor, const FOnInteractionComplete& InCompleteDelegate, UPrimitiveComponent* InFocuedOnComponent)
 {
 	check(GetOwner()->HasAuthority());
 
@@ -56,7 +60,7 @@ bool UVetInteractiveComponent::StartInteraction(UVetInteractionComponent& InInte
 	}
 
 	CurrentInteractor = &InInteractor;
-	InteractiveState.SetIsBeingInteractedWith(true);
+	InteractiveState.SetIsBeingInteractedWith(true, InFocuedOnComponent);
 
 	OnInteractionComplete = InCompleteDelegate;
 
@@ -70,16 +74,16 @@ void UVetInteractiveComponent::CancelInteraction()
 	EndInteraction_Internal();
 }
 
-void UVetInteractiveComponent::BeginFocusedOn()
+void UVetInteractiveComponent::BeginFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent)
 {
-	OnBeginFocusedOn();
-	K2_OnBeginFocusedOn();
+	OnBeginFocusedOn(InInteractor, InFocusedOnComponent);
+	K2_OnBeginFocusedOn(&InInteractor, InFocusedOnComponent);
 }
 
-void UVetInteractiveComponent::EndFocusedOn()
+void UVetInteractiveComponent::EndFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent)
 {
-	OnEndFocusedOn();
-	K2_OnEndFocusedOn();
+	OnEndFocusedOn(InInteractor, InFocusedOnComponent);
+	K2_OnEndFocusedOn(&InInteractor,InFocusedOnComponent);
 }
 
 void UVetInteractiveComponent::SetIsEnabled(bool bInNewEnabled)
@@ -126,10 +130,14 @@ void UVetInteractiveComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	//TODO: log the lack of interictive config!!!!!!!
+	if (!IsValid(InteractiveConfig))
+	{
+		UE_LOG(LogVetInteractive, Error, TEXT("Interactive %s::%s does not have a valid interactive config!"), *GetOwner()->GetName(), *GetName());
+	}
+
 	EvaluateInteractabilityState_Internal();
 
-	if (InteractiveConfig != nullptr && InteractiveConfig->PrerequisitesScript != nullptr)
+	if (IsValid(InteractiveConfig) &&  IsValid(InteractiveConfig->PrerequisitesScript))
 	{
 		InteractionPrerequisiteScript = NewObject<UVetInteractivePrerequisiteScript>(this, InteractiveConfig->PrerequisitesScript, TEXT("Prerequisites Script"));
 	}
@@ -201,7 +209,7 @@ void UVetInteractiveComponent::OnRep_InteractiveState(const FVetInteractiveState
 
 void UVetInteractiveComponent::OnInteractionStarted()
 {
-	K2_OnInteractionStarted.Broadcast(CurrentInteractor.Get());
+	K2_OnInteractionStarted.Broadcast(CurrentInteractor.Get(), InteractiveState.GetFocusedOnComponent());
 
 	if (InteractiveConfig->InteractionTime > 0.0f)
 	{
@@ -219,7 +227,7 @@ void UVetInteractiveComponent::OnInteractionEnded(EVetInteractionResult InResult
 	PrimaryComponentTick.SetTickFunctionEnable(false);
 	InteractionElapsedTime = 0.0f;
 
-	K2_OnInteractionEnded.Broadcast(CurrentInteractor.Get(), InResult);
+	K2_OnInteractionEnded.Broadcast(CurrentInteractor.Get(), InResult, InteractiveState.GetFocusedOnComponent());
 }
 
 void UVetInteractiveComponent::CompleteInteraction_Internal()

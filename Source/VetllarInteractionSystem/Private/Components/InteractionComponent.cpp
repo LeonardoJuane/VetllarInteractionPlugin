@@ -44,7 +44,7 @@ void UVetInteractionComponent::StartInteraction()
 		return;
 	}
 	
-	if (InteractionState.GetFocusedActor() == nullptr || !IVetInteractiveInterface::CanBeInteractedWith_Internal(InteractionState.GetFocusedActor(), this))
+	if (!IsValid(InteractionState.GetFocusedComponent()) || !IVetInteractiveInterface::CanBeInteractedWith_Internal(InteractionState.GetFocusedActor(), this))
 	{
 		return;
 	}
@@ -53,8 +53,8 @@ void UVetInteractionComponent::StartInteraction()
 	{
 		//Pass in the focused actor in case we predicted it during a trace from cursor (the server can't know the focused actor if tracing from cursor).
 
-		AActor* ServerFocusedActor = (TraceType == EVetInteractionTraceType::LineTrace_FromCursor) ? InteractionState.GetFocusedActor() : nullptr;
-		Server_StartInteraction(ServerFocusedActor);	
+		UPrimitiveComponent* ServerFocusedComponent = (TraceType == EVetInteractionTraceType::LineTrace_FromCursor) ? InteractionState.GetFocusedComponent() : nullptr;
+		Server_StartInteraction(ServerFocusedComponent);	
 		return;
 	}
 	
@@ -63,7 +63,7 @@ void UVetInteractionComponent::StartInteraction()
 		FOnInteractionComplete InteractionCompleteDelegate;
 		InteractionCompleteDelegate.BindUObject(this, &UVetInteractionComponent::OnInteractionCompleted);
 
-		if (InteractiveComponent->StartInteraction(*this, InteractionCompleteDelegate))
+		if (InteractiveComponent->StartInteraction(*this, InteractionCompleteDelegate, InteractionState.GetFocusedComponent()))
 		{
 			//If the interaction is not instant disable ticking to avoid changing focus during the interaction.
 			UVetInteractiveConfig* InteractiveConfig = InteractiveComponent->GetInteractiveConfig();
@@ -145,6 +145,25 @@ void UVetInteractionComponent::StopInteraction()
 	OnInteractionEnded_Internal();
 }
 
+bool UVetInteractionComponent::IsLocallyControlled() const
+{
+	AActor* const OwningActor = GetOwner();
+	if (!IsValid(OwningActor))
+	{
+		return false;
+	}
+
+	if (OwningActor->IsA<APawn>())
+	{
+		return CastChecked<APawn>(OwningActor)->IsLocallyControlled();
+	}
+	else if (OwningActor->IsA<AController>())
+	{
+		return CastChecked<AController>(OwningActor)->IsLocalController();
+	}
+	return false;
+}
+
 void UVetInteractionComponent::SetDefaultTraceChannel(ECollisionChannel InTraceChannel)
 {
 	if (CheckConstructorContext(TEXT("SetDefaultTraceChannel")))
@@ -184,20 +203,36 @@ void UVetInteractionComponent::BeginPlay()
 	ConditionallySetTickEnabled(/*bInEnabled =*/ true);
 }
 
-bool UVetInteractionComponent::Server_StartInteraction_Validate(AActor* InFocusedActor)
+void UVetInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (GetOwner()->HasAuthority()
+		&& InteractionState.IsInteracting())
+	{
+		StopInteraction();
+	}
+
+	if (IsValid(InteractionState.GetFocusedComponent()))
+	{
+		SetFocusedComponent(nullptr);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+bool UVetInteractionComponent::Server_StartInteraction_Validate(UPrimitiveComponent* InFocusedComponent)
 {
 	if (TraceType == EVetInteractionTraceType::LineTrace_FromCursor)
 	{
-		return IsValid(InFocusedActor);
+		return IsValid(InFocusedComponent);
 	}
 	return true;
 }
 
-void UVetInteractionComponent::Server_StartInteraction_Implementation(AActor* InFocusedActor)
+void UVetInteractionComponent::Server_StartInteraction_Implementation(UPrimitiveComponent* InFocusedComponent)
 {
-	if (IsValid(InFocusedActor))
+	if (IsValid(InFocusedComponent))
 	{
-		SetFocusedActor(InFocusedActor);
+		SetFocusedComponent(InFocusedComponent);
 	}
 
 	StartInteraction();
@@ -208,43 +243,39 @@ void UVetInteractionComponent::Server_StopInteraction_Implementation()
 	StopInteraction();
 }
 
-void UVetInteractionComponent::SetFocusedActor(AActor* InNewFocusedActor)
+void UVetInteractionComponent::SetFocusedComponent(UPrimitiveComponent* InNewFocusedComponent)
 {
 	//If we are focusing the same actor as before just exit the function
 	//either both null or valid.
-	if (InteractionState.GetFocusedActor() == InNewFocusedActor)
+	if (InteractionState.GetFocusedComponent() == InNewFocusedComponent)
 	{
 		return;
 	}
 
-	SwitchFocusedActor(InNewFocusedActor, InteractionState.GetFocusedActor());
+	SwitchFocusedComponent(InNewFocusedComponent, InteractionState.GetFocusedComponent());
 
 	//We might be removing focus from all actors.
-	InteractionState.SetFocusedActor(InNewFocusedActor);
+	InteractionState.SetFocusedComponent(InNewFocusedComponent);
 }
 
-void UVetInteractionComponent::SwitchFocusedActor(AActor* InNewFocusedActor, AActor* InPreviousFocusedActor)
+void UVetInteractionComponent::SwitchFocusedComponent(UPrimitiveComponent* InNewFocusedComponent, UPrimitiveComponent* InPreviousFocusedComponent)
 {
 	//Remove focus from previous actor
-	if (InPreviousFocusedActor != nullptr)
+	if (InPreviousFocusedComponent != nullptr)
 	{
-		if (auto* const InteractiveComponent = IVetInteractiveInterface::GetInteractiveComponent_Internal(InPreviousFocusedActor))
-		{
-			InteractiveComponent->EndFocusedOn();
-		}
+		AActor* PreviousFocusedActor = InPreviousFocusedComponent->GetOwner();
+		IVetInteractiveInterface::EndFocusedOn_Internal(*this, PreviousFocusedActor, InPreviousFocusedComponent);
 	}
 
 	//Focus on the new actor
-	if (InNewFocusedActor != nullptr)
+	if (InNewFocusedComponent != nullptr)
 	{
-		if (auto* const InteractiveComponent = IVetInteractiveInterface::GetInteractiveComponent_Internal(InNewFocusedActor))
-		{
-			InteractiveComponent->BeginFocusedOn();
-		}
+		AActor* NewFocusedActor = InNewFocusedComponent->GetOwner();
+		IVetInteractiveInterface::BeginFocusedOn_Internal(*this, NewFocusedActor, InNewFocusedComponent);
 	}
 }
 
-AActor* UVetInteractionComponent::GetClosestActorFromArray(const TArray<AActor*>& InActorArray)
+UPrimitiveComponent* UVetInteractionComponent::GetClosestPrimitiveFromArray(const TArray<UPrimitiveComponent*>& InPrimitivesArray)
 {
 	const auto& GetReferenceLocation([&]()
 		{
@@ -258,17 +289,17 @@ AActor* UVetInteractionComponent::GetClosestActorFromArray(const TArray<AActor*>
 
 	const FVector& ReferenceLocation = GetReferenceLocation();
 
-	auto ClosestActor = TPairInitializer<float, AActor*>(-1.0f, nullptr);
-	for (AActor* Actor : InActorArray)
+	auto ClosestActor = TPairInitializer<float, UPrimitiveComponent*>(-1.0f, nullptr);
+	for (UPrimitiveComponent* Primitive : InPrimitivesArray)
 	{
-		if (IsValid(Actor))
+		if (IsValid(Primitive))
 		{
-			const float Distance = FVector(Actor->GetActorLocation() - ReferenceLocation).SizeSquared();
+			const float Distance = FVector(Primitive->GetComponentLocation() - ReferenceLocation).SizeSquared();
 			if (ClosestActor.Value == nullptr
 				|| Distance < ClosestActor.Key)
 			{
 				ClosestActor.Key = Distance;
-				ClosestActor.Value = Actor;
+				ClosestActor.Value = Primitive;
 			}
 		}
 	}
@@ -334,7 +365,7 @@ void UVetInteractionComponent::TraceForInteractives(bool bInFromTouch /*= false*
 
 	if (HitResults.Num() > 0)
 	{
-		TArray<AActor*> FoundInteractives;
+		TArray<UPrimitiveComponent*> FoundInteractives;
 		for (const FHitResult& HitResult : HitResults)
 		{
 			AActor* const HitActor = HitResult.GetActor();
@@ -343,16 +374,16 @@ void UVetInteractionComponent::TraceForInteractives(bool bInFromTouch /*= false*
 				&& bDoesImplementInterface
 				&& IVetInteractiveInterface::CanBeFocusedOn_Internal(HitActor, this))	//Ignore interactives that cannot be focused on
 			{
-				FoundInteractives.Emplace(HitActor);
+				FoundInteractives.Emplace(HitResult.GetComponent());
 			}
 		}
 
-		AActor* const ClosestInteractive = GetClosestActorFromArray(FoundInteractives);
-		SetFocusedActor(ClosestInteractive);
+		UPrimitiveComponent* const ClosestInteractive = GetClosestPrimitiveFromArray(FoundInteractives);
+		SetFocusedComponent(ClosestInteractive);
 	}
 	else
 	{
-		SetFocusedActor(nullptr);
+		SetFocusedComponent(nullptr);
 	}
 }
 
@@ -388,7 +419,8 @@ void UVetInteractionComponent::OnRep_InteractionState(const FVetInteractionCompo
 	if (InPreviousState.IsInteracting() != InteractionState.IsInteracting()
 		|| InPreviousState.GetReplicationKey() != InteractionState.GetReplicationKey())
 	{
-		UVetInteractiveComponent* CurrentInteractive = InteractionState.GetFocusedActor() == nullptr ? nullptr : IVetInteractiveInterface::GetInteractiveComponent_Internal(InteractionState.GetFocusedActor());
+		AActor* FocusedActor = InteractionState.GetFocusedActor();
+		UVetInteractiveComponent* CurrentInteractive = !IsValid(FocusedActor) ? nullptr : IVetInteractiveInterface::GetInteractiveComponent_Internal(FocusedActor);
 
 		if (InteractionState.IsInteracting())
 		{
@@ -402,9 +434,9 @@ void UVetInteractionComponent::OnRep_InteractionState(const FVetInteractionCompo
 		}
 	}
 
-	if (InteractionState.GetFocusedActor() != InPreviousState.GetFocusedActor())
+	if (InteractionState.GetFocusedComponent() != InPreviousState.GetFocusedComponent())
 	{
-		SwitchFocusedActor(InteractionState.GetFocusedActor(), InPreviousState.GetFocusedActor());
+		SwitchFocusedComponent(InteractionState.GetFocusedComponent(), InPreviousState.GetFocusedComponent());
 	}
 }
 

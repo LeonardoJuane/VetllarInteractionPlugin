@@ -43,15 +43,25 @@ struct VETLLARINTERACTIONSYSTEM_API FVetInteractionComponentState
 
 	EVetInteractionResult GetResult() const { return Result; }
 
-	FORCEINLINE void SetFocusedActor(AActor* InActor)
+	FORCEINLINE void SetFocusedComponent(UPrimitiveComponent* InComponent)
 	{
-		if (InActor != FocusedActor)
+		if (InComponent != FocusedComponent)
 		{
-			FocusedActor = InActor;
+			FocusedComponent = InComponent;
 		}
 	}
 
-	AActor* GetFocusedActor() const { return FocusedActor; }
+	UPrimitiveComponent* GetFocusedComponent() const {	return FocusedComponent; }
+
+	AActor* GetFocusedActor() const
+	{
+		if (IsValid(FocusedComponent))
+		{
+			return FocusedComponent->GetOwner();
+		}
+		return nullptr;
+	}
+
 	uint64 GetReplicationKey() const { return ReplicationKey; }
 
 private:
@@ -63,7 +73,7 @@ private:
 	EVetInteractionResult Result{EVetInteractionResult::Success};
 
 	UPROPERTY()
-	TObjectPtr<AActor> FocusedActor;
+	TObjectPtr<UPrimitiveComponent> FocusedComponent;
 
 	//Used to broadcast changes to the client even if they happened in the same frame on the server
 	UPROPERTY()
@@ -95,6 +105,14 @@ public:
 	UFUNCTION(BlueprintCallable)
 	AActor* GetFocusedActor() const { return InteractionState.GetFocusedActor(); }
 
+	UFUNCTION(BlueprintCallable)
+	UPrimitiveComponent* GetFocusedComponent() const { return InteractionState.GetFocusedComponent(); }
+
+	//Returns true if this interaction component is controlled locally.
+	//Useful for situations in which we want to do something only on the client or non dedicated servers.
+	UFUNCTION(BlueprintCallable)
+	bool IsLocallyControlled() const;
+
 	//Default initializers
 
 	void SetDefaultTraceChannel(ECollisionChannel InTraceChannel);
@@ -114,6 +132,7 @@ public:
 protected:
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	//Trace channel to use for interactives
 	UPROPERTY(EditDefaultsOnly)
@@ -137,15 +156,15 @@ protected:
 private:
 
 	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_StartInteraction(AActor* InFocusedActor);
+	void Server_StartInteraction(UPrimitiveComponent* InFocusedComponent);
 
 	UFUNCTION(Server, Reliable)
 	void Server_StopInteraction();
 
-	void SetFocusedActor(AActor* InNewFocusedActor);
-	void SwitchFocusedActor(AActor* InNewFocusedActor, AActor* InPreviousFocusedActor);
+	void SetFocusedComponent(UPrimitiveComponent* InNewFocusedComponent);
+	void SwitchFocusedComponent(UPrimitiveComponent* InNewFocusedComponent, UPrimitiveComponent* InPreviousFocusedComponent);
 
-	AActor* GetClosestActorFromArray(const TArray<AActor*>& InActorArray);
+	UPrimitiveComponent* GetClosestPrimitiveFromArray(const TArray<UPrimitiveComponent*>& InPrimitivesArray);
 
 	//Executes when the interaction has successfully completed
 	void OnInteractionCompleted(UVetInteractiveComponent& InInteractive);

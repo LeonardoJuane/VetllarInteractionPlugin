@@ -7,6 +7,44 @@
 
 DEFINE_LOG_CATEGORY(LogVetInteractiveInterface);
 
+void IVetInteractiveInterface::BeginFocusedOn_Internal(UVetInteractionComponent& InInteractor, AActor* InInteractive, UPrimitiveComponent* InFocusedOnCompoenent)
+{
+	if (!IsValid(InInteractive))
+	{
+		return;
+	}
+
+	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Internal(InInteractive))
+	{
+		InteractiveComponent->BeginFocusedOn(InInteractor, InFocusedOnCompoenent);
+	}
+
+	if (IVetInteractiveInterface* const Interactive = Cast<IVetInteractiveInterface>(InInteractive))
+	{
+		Interactive->OnBeginFocusedOn(InInteractor, InFocusedOnCompoenent);
+	}
+	IVetInteractiveInterface::Execute_K2_OnBeginFocusedOn(InInteractive, &InInteractor, InFocusedOnCompoenent);
+}
+
+void IVetInteractiveInterface::EndFocusedOn_Internal(UVetInteractionComponent& InInteractor, AActor* InInteractive, UPrimitiveComponent* InFocusedOnCompoenent)
+{
+	if (!IsValid(InInteractive))
+	{
+		return;
+	}
+
+	if (UVetInteractiveComponent* const InteractiveComponent = GetInteractiveComponent_Internal(InInteractive))
+	{
+		InteractiveComponent->EndFocusedOn(InInteractor, InFocusedOnCompoenent);
+	}
+
+	if (IVetInteractiveInterface* const Interactive = Cast<IVetInteractiveInterface>(InInteractive))
+	{
+		Interactive->OnEndFocusedOn(InInteractor, InFocusedOnCompoenent);
+	}
+	IVetInteractiveInterface::Execute_K2_OnEndFocusedOn(InInteractive, &InInteractor, InFocusedOnCompoenent);
+}
+
 EVetInteractability IVetInteractiveInterface::GetInteractabilityState_Internal(AActor* InInteractive)
 {
 	if (!IsValid(InInteractive))

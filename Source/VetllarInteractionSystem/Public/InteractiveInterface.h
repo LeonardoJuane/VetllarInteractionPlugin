@@ -33,12 +33,21 @@ public:
 	
 	// Native --------------------------------------------------------------------------------------------------- //
 
+	virtual void OnBeginFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocusedOnComponent) {}
+	virtual void OnEndFocusedOn(UVetInteractionComponent& InInteractor, UPrimitiveComponent* InFocuedOnComponent) {}
+
 	virtual EVetInteractability GetInteractabilityState() const { return EVetInteractability::Available; }
 	virtual bool CanBeInteractedWith(UVetInteractionComponent& InInteractor) const { return true; }
 	virtual bool CanBeFocusedOn(UVetInteractionComponent& InInteractor) const { return true; }
 	virtual UVetInteractiveComponent* GetInteractiveComponent() const { return nullptr; }
 
 	//Blueprint functions --------------------------------------------------------------------------------------- //
+
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "On Begin Focused On"))
+	void K2_OnBeginFocusedOn(UVetInteractionComponent* InInteractor, UPrimitiveComponent* InFocusedOnComponent);
+
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "On End Focused On"))
+	void K2_OnEndFocusedOn(UVetInteractionComponent* InInteractor, UPrimitiveComponent* InFocusedOnComponent);
 
 	//Allows blueprints to state a desired interactability for this actor.
 	//The result will be the less available of the states based on this function and internal results.
@@ -74,6 +83,9 @@ public:
 private:
 
 	friend class UVetInteractionComponent;
+
+	static void BeginFocusedOn_Internal(UVetInteractionComponent& InInteractor, AActor* InInteractive, UPrimitiveComponent* InFocusedOnCompoenent);
+	static void EndFocusedOn_Internal(UVetInteractionComponent& InInteractor, AActor* InInteractive, UPrimitiveComponent* InFocusedOnCompoenent);
 
 	static EVetInteractability GetInteractabilityState_Internal(AActor* InInteractive);
 	static bool CanBeInteractedWith_Internal(AActor* InInteractive, UVetInteractionComponent* InInteractor);
