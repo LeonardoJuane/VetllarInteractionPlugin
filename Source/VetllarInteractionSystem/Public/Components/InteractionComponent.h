@@ -4,10 +4,13 @@
 
 //Engine
 #include "Components/ActorComponent.h"
+#include "Components/PrimitiveComponent.h"
 
 //Interaction
 #include "InteractiveTypes.h"
 #include "InteractionComponent.generated.h"
+
+struct FHitResult;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogInteraction, Log, All);
 

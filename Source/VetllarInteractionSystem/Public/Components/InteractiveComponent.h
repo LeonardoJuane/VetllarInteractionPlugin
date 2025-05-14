@@ -4,6 +4,7 @@
 
 //Engine
 #include "Components/ActorComponent.h"
+#include "Components/PrimitiveComponent.h"
 
 //Interaction
 #include "InteractiveConfig.h"

@@ -1,16 +1,22 @@
 // (c) 2023 Leonardo F. Juane - To be used under Boost Software License 1.0
 
-//Interaction
 #include "Components/InteractionComponent.h"
-#include "Components/InteractiveComponent.h"
-#include "InteractiveConfig.h"
-#include "InteractiveInterface.h"
 
 //Engine
 #include "Camera/CameraComponent.h"
+#if WITH_EDITOR
+#include "Engine.h"
+#endif //WITH_EDITOR
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "UObject/UObjectThreadContext.h"
+
+//Vetllar Interaction
+#include "Components/InteractiveComponent.h"
+#include "InteractiveConfig.h"
+#include "InteractiveInterface.h"
 
 DEFINE_LOG_CATEGORY(LogInteraction);
 

@@ -3,6 +3,7 @@
 #include "Components/InteractiveComponent.h"
 
 //Engine
+#include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
 
 //Interaction
