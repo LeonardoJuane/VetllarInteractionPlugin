@@ -466,7 +466,7 @@ void UVetInteractionComponent::PrintDebugMessage(int32 InKey, const FString& InD
 bool UVetInteractionComponent::CheckConstructorContext(const TCHAR* InContext) const
 {
 	check(InContext != nullptr && "Check constructor context called without a context!");
-	return ensureAlwaysMsgf(FUObjectThreadContext::Get().IsInConstructor, TEXT("Default Initializer function %s can only be called from within the actor constructor!"), *InContext);
+	return ensureAlwaysMsgf(FUObjectThreadContext::Get().IsInConstructor, TEXT("Default Initializer function %s can only be called from within the actor constructor!"), InContext);
 }
 
 void UVetInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
