@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0",
-	"FriendlyName": "VetllarInteractionSystem",
+	"FriendlyName": "Vetllar Interaction System",
 	"Description": "Simple interaction system for third person games",
 	"Category": "Vetllar Framework",
 	"CreatedBy": "Leonardo F. Juane",
